@@ -1,10 +1,12 @@
 // [입력] 탭 — 금액 키패드, 카테고리, 카드/현금, 날짜, 메모.
 
-import { num, won, esc, fmtDate, relativeDayLabel, addDays, onClick, sum, toast } from '../util.js';
+import { num, won, esc, fmtDate, relativeDayLabel, addDays, onClick, sum, toast, josaRo } from '../util.js';
 import { METHODS } from '../defaults.js';
 import { indexById } from '../store.js';
+import { suggest, learn, getLastUsed, setLastUsed } from '../autocat.js';
 
 const MAX_DIGITS = 9; // 999,999,999원
+const SUGGEST_DELAY = 250; // 메모를 치는 도중 계속 바뀌지 않도록 잠깐 기다린다
 
 export async function render(root, ctx) {
   const st = ctx.state.entry;
@@ -22,6 +24,16 @@ export async function render(root, ctx) {
     } else {
       // 새로 적는 중인데 고른 카테고리가 사라졌다면 선택을 푼다.
       st.categoryId = null;
+    }
+  }
+
+  // ③ 마지막에 쓴 카테고리·결제수단을 기본값으로. (앱을 새로 연 직후에만 걸린다.
+  //    저장 직후에는 방금 쓴 값이 state 에 그대로 남아 있기 때문)
+  if (!editing && !st.categoryId) {
+    const last = getLastUsed();
+    if (last && chipCats.some((c) => c.id === last.categoryId)) {
+      st.categoryId = last.categoryId;
+      if (last.method === 'cash' || last.method === 'card') st.method = last.method;
     }
   }
 
@@ -85,9 +97,10 @@ export async function render(root, ctx) {
       <div class="row" style="margin-bottom:8px">
         <input type="date" id="dateInput" value="${esc(st.date)}" />
       </div>
-      <input type="text" id="memoInput" maxlength="200" placeholder="메모 (선택) 예: 점심 김치찌개" value="${esc(
+      <input type="text" id="memoInput" maxlength="200" placeholder="메모 — 적으면 카테고리를 자동으로 골라 줍니다" value="${esc(
         st.memo
       )}" />
+      <div class="hint" id="autoHint" hidden></div>
     </div>
 
     ${
@@ -143,7 +156,10 @@ export async function render(root, ctx) {
 
   onClick(root, '[data-cat]', (btn) => {
     st.categoryId = btn.dataset.cat;
-    root.querySelectorAll('[data-cat]').forEach((el) => el.classList.toggle('selected', el === btn));
+    // 직접 고른 뒤에는 메모를 더 쳐도 자동 분류가 그 선택을 덮지 않는다.
+    st.categoryTouched = true;
+    paintChips();
+    showHint(null);
   });
 
   onClick(root, '[data-method]', (btn) => {
@@ -151,8 +167,45 @@ export async function render(root, ctx) {
     root.querySelectorAll('[data-method]').forEach((el) => el.classList.toggle('selected', el === btn));
   });
 
+  const hintBox = root.querySelector('#autoHint');
+  let suggestTimer = null;
+
+  function paintChips() {
+    root.querySelectorAll('[data-cat]').forEach((el) => {
+      el.classList.toggle('selected', el.dataset.cat === st.categoryId);
+    });
+  }
+
+  function showHint(hit) {
+    if (!hit) {
+      hintBox.hidden = true;
+      hintBox.textContent = '';
+      return;
+    }
+    const why = hit.reason === 'learned' ? '전에 고른 대로' : '메모를 보고';
+    hintBox.innerHTML = `💡 ${esc(why)} <b>${esc(hit.category.emoji || '')} ${esc(
+      hit.category.name
+    )}</b>${esc(josaRo(hit.category.name))} 골랐어요. 다르면 다른 칩을 누르세요.`;
+    hintBox.hidden = false;
+  }
+
+  function runSuggest() {
+    // 수정 중이거나 사용자가 이미 카테고리를 직접 골랐으면 건드리지 않는다.
+    if (editing || st.categoryTouched) return;
+    const hit = suggest(st.memo, chipCats);
+    if (!hit || hit.category.id === st.categoryId) {
+      showHint(hit && hit.category.id === st.categoryId ? hit : null);
+      return;
+    }
+    st.categoryId = hit.category.id;
+    paintChips();
+    showHint(hit);
+  }
+
   memoInput.addEventListener('input', () => {
     st.memo = memoInput.value;
+    clearTimeout(suggestTimer);
+    suggestTimer = setTimeout(runSuggest, SUGGEST_DELAY);
   });
 
   dateInput.addEventListener('change', () => {
@@ -175,18 +228,26 @@ export async function render(root, ctx) {
       };
       if (st.editingId) {
         await ctx.store.updateExpense(st.editingId, payload);
+        // 수정도 학습 대상이다. 자동 분류가 틀렸을 때 사용자가 고친 결과가 여기로 들어온다.
+        learn(payload.memo, payload.category_id);
+        setLastUsed(payload.category_id, payload.method);
         st.editingId = null;
         st.amount = '';
         st.memo = '';
+        st.categoryTouched = false;
         toast('수정했어요');
         ctx.go('daily', { date: payload.spent_on });
         return;
       }
       await ctx.store.addExpense(payload);
+      learn(payload.memo, payload.category_id);
+      setLastUsed(payload.category_id, payload.method);
       st.amount = '';
       st.memo = '';
+      st.categoryTouched = false;
       memoInput.value = '';
       paintAmount();
+      showHint(null);
       toast(`${won(amount)} 저장했어요`);
       paintPreview();
     } catch (err) {
@@ -266,4 +327,5 @@ export function resetEntry(state) {
   state.entry.editingId = null;
   state.entry.amount = '';
   state.entry.memo = '';
+  state.entry.categoryTouched = false;
 }
