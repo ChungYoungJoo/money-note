@@ -2,6 +2,7 @@
 
 import { esc, onClick, toast, download, todayISO } from '../util.js';
 import { indexById } from '../store.js';
+import { learnedCount, clearLearned } from '../autocat.js';
 
 const ALL_FROM = '2000-01-01';
 const ALL_TO = '2099-12-31';
@@ -49,6 +50,16 @@ export async function render(root, ctx) {
             : 'Supabase에 저장되고 있습니다. 휴대폰과 PC에서 같은 내역이 보입니다.'
         }
       </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">카테고리 자동 분류</div>
+      <div class="notice" style="margin-bottom:10px">
+        메모를 적으면 카테고리를 자동으로 골라 줍니다. 기본 키워드(스타벅스 → 카페/간식 같은 것)로 시작해서,
+        저장할 때마다 <strong>실제로 고른 카테고리를 기억</strong>하며 정확해집니다. 지금까지 기억한 메모: ${learnedCount()}개
+        <br />기억은 이 브라우저에만 쌓입니다(폰과 PC가 따로 배웁니다). 지출 내역과는 별개라 지워도 내역은 그대로입니다.
+      </div>
+      <button class="btn secondary slim" type="button" id="clearLearn">자동 분류 기억 지우기</button>
     </div>
 
     <div class="card">
@@ -123,6 +134,15 @@ export async function render(root, ctx) {
     } catch (err) {
       toast(err.message, 'error');
     }
+  });
+
+  /* ---------- 자동 분류 ---------- */
+
+  root.querySelector('#clearLearn').addEventListener('click', () => {
+    if (!window.confirm('자동 분류가 기억한 내용을 모두 지울까요? 지출 내역은 그대로 남습니다.')) return;
+    clearLearned();
+    toast('자동 분류 기억을 지웠어요');
+    ctx.refresh();
   });
 
   /* ---------- 내보내기 / 가져오기 ---------- */
