@@ -21,6 +21,7 @@ const state = {
     method: 'card',
     memo: '',
     editingId: null,
+    categoryTouched: false, // 사용자가 카테고리를 직접 고르면 자동 분류가 덮지 않는다
   },
 };
 
