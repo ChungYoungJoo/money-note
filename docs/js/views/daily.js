@@ -113,6 +113,7 @@ export async function render(root, ctx) {
       method: row.method === 'cash' ? 'cash' : 'card',
       memo: row.memo || '',
       editingId: row.id,
+      categoryTouched: true,
     };
     ctx.go('entry');
   });
