@@ -104,6 +104,15 @@ export function relativeDayLabel(iso) {
   return '';
 }
 
+/** '로' / '으로' 를 받침에 맞춰 고른다. (생활용품'으로', 교통'으로', 교육'으로', 카페'로') */
+export function josaRo(word) {
+  const last = String(word || '').trim().slice(-1);
+  const code = last.charCodeAt(0) - 0xac00;
+  if (Number.isNaN(code) || code < 0 || code > 11171) return '로';
+  const jong = code % 28;
+  return jong === 0 || jong === 8 ? '로' : '으로'; // 받침 없음 또는 ㄹ 받침
+}
+
 export function esc(s) {
   return String(s === null || s === undefined ? '' : s).replace(
     /[&<>"']/g,
